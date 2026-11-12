@@ -64,6 +64,42 @@ class MixUpTest(testing.TestCase):
         self.assertNotAllClose(output, image)
         self.assertAllClose(output.shape, image.shape)
 
+    def test_mix_up_segmentation_masks(self):
+        # Masks are mixed with the same weights and permutation as the images:
+        # a mask with the same values as the image must come out equal to it.
+        classes = np.random.randint(0, 4, (4, 8, 8, 1))
+        images = classes.astype("float32")
+        masks = classes.astype("int32")
+        layer = layers.MixUp(alpha=0.5, data_format="channels_last")
+        transformation = {
+            "mix_weight": np.array([0.2, 0.7, 0.4, 1.0], "float32"),
+            "permutation_order": np.array([1, 0, 3, 2]),
+        }
+        output_images = layer.transform_images(images, transformation)
+        output_masks = layer.transform_segmentation_masks(masks, transformation)
+        self.assertEqual(tuple(output_masks.shape), (4, 8, 8, 1))
+        self.assertAllClose(output_masks, output_images)
+
+        outputs = layer(
+            {"images": images, "segmentation_masks": masks}, training=True
+        )
+        self.assertEqual(
+            tuple(outputs["segmentation_masks"].shape), (4, 8, 8, 1)
+        )
+        self.assertAllClose(outputs["segmentation_masks"], outputs["images"])
+
+    def test_tf_data_segmentation_masks(self):
+        layer = layers.MixUp(data_format="channels_last")
+        input_data = {
+            "images": np.random.random((2, 8, 8, 3)).astype("float32"),
+            "segmentation_masks": np.random.randint(0, 4, (2, 8, 8, 1)),
+        }
+        ds = tf.data.Dataset.from_tensor_slices(input_data).batch(2).map(layer)
+        output = next(iter(ds))
+        self.assertEqual(
+            tuple(output["segmentation_masks"].shape), (2, 8, 8, 1)
+        )
+
     def test_tf_data_compatibility(self):
         layer = layers.MixUp()
         input_data = np.random.random((2, 8, 8, 3))

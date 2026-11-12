@@ -152,14 +152,16 @@ class MixUp(BaseImagePreprocessingLayer):
     ):
         def _mix_up_segmentation_masks(segmentation_masks, transformation):
             mix_weight = transformation["mix_weight"]
-            # Make sure we are on cpu for torch tensors.
-            mix_weight = ops.convert_to_numpy(mix_weight)
             permutation_order = transformation["permutation_order"]
-            mix_weight = self.backend.ops.numpy.reshape(
-                mix_weight, [-1, 1, 1, 1]
+            mix_weight = self.backend.ops.cast(
+                self.backend.ops.numpy.reshape(mix_weight, [-1, 1, 1, 1]),
+                dtype=self.compute_dtype,
+            )
+            segmentation_masks = self.backend.ops.cast(
+                segmentation_masks, dtype=self.compute_dtype
             )
             segmentation_masks_for_mix_up = self.backend.ops.numpy.take(
-                segmentation_masks, permutation_order
+                segmentation_masks, permutation_order, axis=0
             )
             segmentation_masks = (
                 mix_weight * segmentation_masks
