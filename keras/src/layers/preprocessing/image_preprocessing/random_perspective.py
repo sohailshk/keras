@@ -281,6 +281,14 @@ class RandomPerspective(BaseImagePreprocessingLayer):
                 bounding_box_format="xyxy",
             )
 
+            bounding_boxes = convert_format(
+                bounding_boxes,
+                source="xyxy",
+                target=self.bounding_box_format,
+                height=input_height,
+                width=input_width,
+            )
+
             self.backend.reset()
 
         return bounding_boxes

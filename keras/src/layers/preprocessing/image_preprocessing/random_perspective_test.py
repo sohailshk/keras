@@ -4,6 +4,9 @@ from absl.testing import parameterized
 from keras.src import backend
 from keras.src import layers
 from keras.src import testing
+from keras.src.layers.preprocessing.image_preprocessing.bounding_boxes.converters import (  # noqa: E501
+    convert_format,
+)
 from keras.src.utils.module_utils import tensorflow as tf
 
 
@@ -92,6 +95,53 @@ class RandomPerspectiveTest(testing.TestCase):
         ds = tf.data.Dataset.from_tensor_slices(input_data).batch(2).map(layer)
         for output in ds.take(1):
             output.numpy()
+
+    @parameterized.named_parameters(
+        ("xywh", "xywh"),
+        ("rel_xyxy", "rel_xyxy"),
+        ("center_xywh", "center_xywh"),
+    )
+    def test_random_perspective_bounding_boxes_output_format(self, box_format):
+        # The output boxes must be in `bounding_box_format`, not in "xyxy".
+        height, width = 10, 8
+        xyxy_boxes = np.array([[[2, 1, 4, 3], [6, 4, 8, 6]]], "float32")
+        transformation = {
+            "apply_perspective": np.array([True]),
+            "end_points": np.array(
+                [[[0.0, 0.0], [4.151311, 0.0], [0.0, 6.695701], [4.27, 7.52]]]
+            ),
+            "input_shape": np.array((height, width, 3)),
+            "start_points": np.array(
+                [[[0.0, 0.0], [7.0, 0.0], [0.0, 9.0], [7.0, 9.0]]]
+            ),
+        }
+
+        def transform(boxes, bounding_box_format):
+            layer = layers.RandomPerspective(
+                bounding_box_format=bounding_box_format,
+                data_format="channels_last",
+            )
+            return layer.transform_bounding_boxes(
+                {"boxes": boxes, "labels": np.array([[1, 2]])}, transformation
+            )["boxes"]
+
+        expected = transform(xyxy_boxes, "xyxy")
+        converted = convert_format(
+            xyxy_boxes,
+            source="xyxy",
+            target=box_format,
+            height=height,
+            width=width,
+        )
+        output = transform(converted, box_format)
+        output = convert_format(
+            output,
+            source=box_format,
+            target="xyxy",
+            height=height,
+            width=width,
+        )
+        self.assertAllClose(output, expected, atol=1e-3, rtol=1e-3)
 
     @parameterized.named_parameters(
         (

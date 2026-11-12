@@ -137,10 +137,17 @@ class RandomRotation(BaseImagePreprocessingLayer):
     ):
         if training:
             ops = self.backend.ops
-            boxes = bounding_boxes["boxes"]
             height = transformation["image_height"]
             width = transformation["image_width"]
             batch_size = transformation["batch_size"]
+            bounding_boxes = converters.convert_format(
+                bounding_boxes,
+                source=self.bounding_box_format,
+                target="xyxy",
+                height=height,
+                width=width,
+            )
+            boxes = bounding_boxes["boxes"]
             boxes = converters.affine_transform(
                 boxes=boxes,
                 angle=transformation["angle"],

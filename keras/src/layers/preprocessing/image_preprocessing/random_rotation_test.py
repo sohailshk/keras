@@ -4,6 +4,9 @@ from absl.testing import parameterized
 from keras.src import backend
 from keras.src import layers
 from keras.src import testing
+from keras.src.layers.preprocessing.image_preprocessing.bounding_boxes.converters import (  # noqa: E501
+    convert_format,
+)
 from keras.src.utils.module_utils import tensorflow as tf
 
 
@@ -77,3 +80,46 @@ class RandomRotationTest(testing.TestCase):
         ).reshape(input_shape[1:])
         output = next(iter(ds)).numpy()
         self.assertAllClose(output, expected_output)
+
+    @parameterized.named_parameters(
+        ("xywh", "xywh"),
+        ("rel_xyxy", "rel_xyxy"),
+        ("center_xywh", "center_xywh"),
+    )
+    def test_bounding_boxes_non_xyxy_format(self, box_format):
+        # Rotating boxes given in another format must give the same boxes as
+        # rotating the same boxes given as "xyxy".
+        height, width = 10, 8
+        xyxy_boxes = np.array([[[2, 1, 4, 3], [6, 4, 8, 6]]], "float32")
+        images = np.zeros((1, height, width, 1), "float32")
+        transformation = layers.RandomRotation(
+            factor=(0.1, 0.1)
+        ).get_random_transformation({"images": images}, training=True, seed=1)
+
+        def transform(boxes, bounding_box_format):
+            layer = layers.RandomRotation(
+                factor=(0.1, 0.1),
+                bounding_box_format=bounding_box_format,
+                data_format="channels_last",
+            )
+            return layer.transform_bounding_boxes(
+                {"boxes": boxes, "labels": np.array([[1, 2]])},
+                transformation,
+            )["boxes"]
+
+        expected = transform(xyxy_boxes, "xyxy")
+        converted = convert_format(
+            xyxy_boxes,
+            source="xyxy",
+            target=box_format,
+            height=height,
+            width=width,
+        )
+        output = convert_format(
+            transform(converted, box_format),
+            source=box_format,
+            target="xyxy",
+            height=height,
+            width=width,
+        )
+        self.assertAllClose(output, expected, atol=1e-3, rtol=1e-3)
