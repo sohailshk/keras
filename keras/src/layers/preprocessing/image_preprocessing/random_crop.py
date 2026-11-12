@@ -126,7 +126,7 @@ class RandomCrop(BaseImagePreprocessingLayer):
             h_start = int(float(input_height - crop_height) / 2)
             w_start = int(float(input_width - crop_width) / 2)
 
-        return h_start, w_start
+        return h_start, w_start, input_height, input_width
 
     def transform_images(self, images, transformation, training=True):
         if training:
@@ -140,7 +140,7 @@ class RandomCrop(BaseImagePreprocessingLayer):
         return images
 
     def _random_crop(self, images, transformation, interpolation="bilinear"):
-        crop_box_hstart, crop_box_wstart = transformation
+        crop_box_hstart, crop_box_wstart = transformation[:2]
         crop_height = self.height
         crop_width = self.width
 
@@ -215,38 +215,58 @@ class RandomCrop(BaseImagePreprocessingLayer):
         """
 
         if training:
-            h_start, w_start = transformation
+            h_start, w_start, input_height, input_width = transformation
             if not self.backend.ops.is_tensor(bounding_boxes["boxes"]):
                 bounding_boxes = densify_bounding_boxes(
                     bounding_boxes, backend=self.backend
                 )
             boxes = bounding_boxes["boxes"]
             # Convert to a standard xyxy as operations are done xyxy by default.
+            # Relative formats are relative to the input image.
             boxes = convert_format(
                 boxes=boxes,
                 source=self.bounding_box_format,
                 target="xyxy",
-                height=self.height,
-                width=self.width,
+                height=input_height,
+                width=input_width,
             )
             h_start = self.backend.ops.cast(h_start, boxes.dtype)
             w_start = self.backend.ops.cast(w_start, boxes.dtype)
-            # Shift by the crop offsets and clip to the crop size so boxes
+            region_height = self.backend.ops.numpy.minimum(
+                float(self.height), float(input_height) - h_start
+            )
+            region_width = self.backend.ops.numpy.minimum(
+                float(self.width), float(input_width) - w_start
+            )
+            # Shift by the crop offsets and clip to the cropped region so boxes
             # stay within the cropped image. `boxes[..., i]` handles both
             # batched (B, N, 4) and unbatched (N, 4) boxes.
             x1 = self.backend.ops.numpy.clip(
-                boxes[..., 0] - w_start, 0, self.width
+                boxes[..., 0] - w_start, 0, region_width
             )
             y1 = self.backend.ops.numpy.clip(
-                boxes[..., 1] - h_start, 0, self.height
+                boxes[..., 1] - h_start, 0, region_height
             )
             x2 = self.backend.ops.numpy.clip(
-                boxes[..., 2] - w_start, 0, self.width
+                boxes[..., 2] - w_start, 0, region_width
             )
             y2 = self.backend.ops.numpy.clip(
-                boxes[..., 3] - h_start, 0, self.height
+                boxes[..., 3] - h_start, 0, region_height
             )
-            boxes = self.backend.ops.numpy.stack([x1, y1, x2, y2], axis=-1)
+            # The cropped region is smaller than the output when the input is
+            # smaller than the target size; the images are then resized, so the
+            # boxes have to be scaled the same way.
+            width_scale = self.width / region_width
+            height_scale = self.height / region_height
+            boxes = self.backend.ops.numpy.stack(
+                [
+                    x1 * width_scale,
+                    y1 * height_scale,
+                    x2 * width_scale,
+                    y2 * height_scale,
+                ],
+                axis=-1,
+            )
 
             # Convert to user defined bounding box format
             boxes = convert_format(

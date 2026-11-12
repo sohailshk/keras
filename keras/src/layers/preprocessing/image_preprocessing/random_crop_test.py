@@ -1,4 +1,5 @@
 import numpy as np
+from absl.testing import parameterized
 
 from keras.src import backend
 from keras.src import layers
@@ -175,7 +176,7 @@ class RandomCropTest(testing.TestCase):
             "labels": np.array([0]),
         }
         output = layer.transform_bounding_boxes(
-            bounding_boxes, (3, 1), training=True
+            bounding_boxes, (3, 1, 8, 8), training=True
         )
         # Crop starts at row 3 (h_start), column 1 (w_start).
         # x coordinates must shift by w_start, y coordinates by h_start.
@@ -189,7 +190,7 @@ class RandomCropTest(testing.TestCase):
             "labels": np.array([[0]]),
         }
         output = layer.transform_bounding_boxes(
-            bounding_boxes, (3, 1), training=True
+            bounding_boxes, (3, 1, 8, 8), training=True
         )
         expected_boxes = np.array([[[2.0, 1.0, 4.0, 2.0]]])
         self.assertAllClose(output["boxes"], expected_boxes)
@@ -206,7 +207,7 @@ class RandomCropTest(testing.TestCase):
             "labels": np.array([0]),
         }
         output = layer.transform_bounding_boxes(
-            bounding_boxes, (3, 1), training=True
+            bounding_boxes, (3, 1, 8, 8), training=True
         )
         # Box extends beyond the crop: it must be clipped to its size.
         # x2 = clip(8 - w_start, 0, 4) = 4 ; y2 = clip(8 - h_start, 0, 2) = 2
@@ -220,11 +221,58 @@ class RandomCropTest(testing.TestCase):
             "labels": np.array([[0]]),
         }
         output = layer.transform_bounding_boxes(
-            bounding_boxes, (3, 1), training=True
+            bounding_boxes, (3, 1, 8, 8), training=True
         )
         expected_boxes = np.array([[[0.0, 0.0, 4.0, 2.0]]])
         self.assertAllClose(output["boxes"], expected_boxes)
         self.assertAllClose(output["labels"], np.array([[0]]))
+
+    def _box_extent(self, image):
+        # (x1, y1, x2, y2) of the pixels above 0.5 in an (H, W, 1) image.
+        ys, xs = np.where(backend.ops.convert_to_numpy(image)[..., 0] > 0.5)
+        return np.array([xs.min(), ys.min(), xs.max() + 1, ys.max() + 1])
+
+    @parameterized.named_parameters(
+        ("crop_smaller", (20, 30), "xyxy"),
+        ("crop_smaller_rel", (20, 30), "rel_xyxy"),
+        ("crop_larger", (50, 70), "xyxy"),
+        ("crop_larger_rel", (50, 70), "rel_xyxy"),
+        ("crop_larger_height_only", (50, 30), "xyxy"),
+    )
+    def test_bounding_boxes_follow_image_content(self, size, box_format):
+        # A white rectangle on a black image: the transformed box must still
+        # cover the rectangle in the output image, including when the input is
+        # smaller than the target size (images get resized) and for relative
+        # box formats (relative to the input, not to the crop).
+        height, width = 40, 60
+        images = np.zeros((1, height, width, 1), "float32")
+        images[:, 4:36, 6:54] = 1.0
+        boxes = np.array([[[6.0, 4.0, 54.0, 36.0]]], "float32")
+        if box_format == "rel_xyxy":
+            boxes = boxes / np.array([width, height, width, height])
+        layer = layers.RandomCrop(
+            *size,
+            bounding_box_format=box_format,
+            data_format="channels_last",
+            seed=0,
+        )
+        out = layer(
+            {
+                "images": images,
+                "bounding_boxes": {
+                    "boxes": boxes,
+                    "labels": np.array([[1]], "int32"),
+                },
+            },
+            training=True,
+        )
+        out_boxes = backend.ops.convert_to_numpy(out["bounding_boxes"]["boxes"])
+        if box_format == "rel_xyxy":
+            out_boxes = out_boxes * np.array(
+                [size[1], size[0], size[1], size[0]]
+            )
+        expected = self._box_extent(out["images"][0])
+        self.assertAllClose(out_boxes[0, 0], expected, atol=0.5)
 
     def test_segmentation_mask_preserves_dtype_and_classes(self):
         # Masks hold discrete class indices; the resize fallback must use
