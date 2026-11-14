@@ -1267,9 +1267,17 @@ def nanprod(x, axis=None, keepdims=False):
     return jnp.nanprod(x, axis=axis, keepdims=keepdims)
 
 
+def _convert_quantile_q(q):
+    # `jnp.quantile` floors `q * (n - 1)`, which fails for integer `q`.
+    q = convert_to_tensor(q)
+    if not jnp.issubdtype(q.dtype, jnp.floating):
+        q = cast(q, config.floatx())
+    return q
+
+
 def nanquantile(x, q, axis=None, method="linear", keepdims=False):
     x = convert_to_tensor(x)
-    q = convert_to_tensor(q)
+    q = _convert_quantile_q(q)
     return jnp.nanquantile(x, q, axis=axis, method=method, keepdims=keepdims)
 
 
@@ -1351,7 +1359,7 @@ def ptp(x, axis=None, keepdims=False):
 
 def quantile(x, q, axis=None, method="linear", keepdims=False):
     x = convert_to_tensor(x)
-    q = convert_to_tensor(q)
+    q = _convert_quantile_q(q)
     if standardize_dtype(x.dtype) == "int64":
         x = cast(x, config.floatx())
 

@@ -5258,6 +5258,17 @@ class NumpyTwoInputOpsCorrectnessTest(testing.TestCase):
                 np.quantile(x, q, axis=1, method=method),
             )
 
+    def test_quantile_integer_q(self):
+        x = np.array([[1.0, np.nan, 3.0], [4.0, 5.0, 6.0]], dtype="float32")
+        for q in [0, 1, np.array([0, 1])]:
+            self.assertAllClose(
+                knp.quantile(x[:, 1:], q, axis=0),
+                np.quantile(x[:, 1:], q, axis=0),
+            )
+            self.assertAllClose(
+                knp.nanquantile(x, q, axis=0), np.nanquantile(x, q, axis=0)
+            )
+
     @pytest.mark.skipif(
         backend.backend() != "tensorflow",
         reason="Only test tensorflow backend",
