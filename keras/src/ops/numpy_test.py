@@ -5258,6 +5258,17 @@ class NumpyTwoInputOpsCorrectnessTest(testing.TestCase):
                 np.quantile(x, q, axis=1, method=method),
             )
 
+    def test_quantile_method_symbolic(self):
+        x = np.array([[1.0, 2.0, 3.0, 4.0]], dtype="float32")
+        inputs = keras.Input(shape=(4,), batch_size=1)
+        for method in ["linear", "lower", "higher", "midpoint", "nearest"]:
+            model = keras.Model(
+                inputs, knp.quantile(inputs, 0.501, method=method)
+            )
+            self.assertAllClose(
+                model(x), np.quantile(x, 0.501, method=method), msg=method
+            )
+
     @pytest.mark.skipif(
         backend.backend() != "tensorflow",
         reason="Only test tensorflow backend",

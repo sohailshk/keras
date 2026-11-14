@@ -7575,7 +7575,7 @@ class Quantile(Operation):
 
     def call(self, x, q):
         return backend.ops.numpy.quantile(
-            x, q, axis=self.axis, keepdims=self.keepdims
+            x, q, axis=self.axis, method=self.method, keepdims=self.keepdims
         )
 
     def compute_output_spec(self, x, q):
